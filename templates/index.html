@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Watermarker</title>
+  <style>
+    :root { --navy:#162645; --sky:#e8eef8; --line:#c5d0e3; --accent:#2f6fed; --text:#1c2433; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--text); background:var(--sky); }
+    main { max-width:1000px; margin:0 auto; padding:24px 16px 48px; }
+    h1 { margin:0 0 4px; color:var(--navy); }
+    .sub { margin:0 0 20px; color:#4a566e; }
+    .layout { display:grid; grid-template-columns:minmax(0,330px) minmax(0,1fr); gap:20px; align-items:start; }
+    .controls { grid-column:1; grid-row:1; }
+    .stage { grid-column:2; grid-row:1; position:sticky; top:16px; }
+    .controls, .stage { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; }
+    .stage { min-height:280px; display:grid; place-items:center; text-align:center; }
+    .stage.over { outline:3px dashed var(--accent); outline-offset:-8px; }
+    canvas { max-width:100%; max-height:76vh; width:auto; height:auto; border-radius:6px; background:#dfe6f2; }
+    canvas[hidden] { display:none; }
+    .drop { display:block; width:100%; padding:70px 20px; border:2px dashed var(--line); border-radius:10px; cursor:pointer; color:#4a566e; }
+    .drop:hover, .drop:focus-within { border-color:var(--accent); }
+    .drop strong { display:block; color:var(--navy); font-size:1.1rem; margin-bottom:4px; }
+    .drop[hidden] { display:none; }
+    #hint, #status { margin:8px 0 0; font-size:.9rem; color:#4a566e; min-height:1.2em; }
+    #status.error { color:#b3261e; font-weight:600; }
+
+    label.field { display:block; margin:14px 0 4px; font-weight:600; font-size:.92rem; }
+    .controls > :first-child { margin-top:0; }
+    input[type=text], select { width:100%; padding:8px; border:1px solid var(--line); border-radius:8px; font:inherit; }
+    input[type=range] { width:100%; }
+    input[type=color] { width:52px; height:34px; border:1px solid var(--line); border-radius:8px; padding:2px; }
+    .range-head { display:flex; justify-content:space-between; margin:14px 0 2px; font-weight:600; font-size:.92rem; }
+    .range-head output { font-weight:400; color:#4a566e; }
+    .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .hint { font-size:.8rem; color:#5d6a84; margin:4px 0 0; }
+    .btn { display:inline-block; padding:9px 14px; border:1.5px solid var(--navy); border-radius:8px; background:#fff; color:var(--navy);
+           font:inherit; font-weight:600; font-size:.92rem; cursor:pointer; }
+    .btn:hover { background:var(--sky); }
+    .btn[hidden] { display:none; }
+    .primary { width:100%; margin-top:18px; padding:12px; border:0; background:var(--navy); color:#fff; }
+    .primary:hover { background:#20366a; }
+    .primary:disabled { opacity:.5; cursor:not-allowed; }
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+    :focus-visible, .btn:has(:focus-visible) { outline:3px solid var(--accent); outline-offset:2px; }
+
+    @media (max-width:780px) {
+      .layout { grid-template-columns:1fr; }
+      .controls, .stage { grid-column:1; }
+      .stage { grid-row:1; top:0; z-index:2; min-height:0; padding:10px; border-radius:0 0 12px 12px; }   /* preview stays on screen while you move the sliders */
+      .controls { grid-row:2; }
+      canvas { max-height:38vh; }
+      .drop { padding:36px 16px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Image Watermarker</h1>
+  <p class="sub">Add your website or logo to a photo and watch it change as you edit. Your photo stays on your device.</p>
+
+  <div class="layout">
+    <section class="stage" id="stage" aria-label="Preview">
+      <div>
+        <label class="drop" id="drop" for="photo"><strong>Choose a photo</strong>or drag one here</label>
+        <canvas id="preview" hidden aria-label="Preview of your watermarked photo"></canvas>
+        <p id="hint" aria-live="polite"></p>
+        <p id="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <form class="controls" id="controls" onsubmit="return false">
+      <label class="btn" for="photo">Choose photo…</label>
+      <input class="sr-only" id="photo" type="file" accept="image/*">
+
+      <label class="field" for="text">Watermark text</label>
+      <input id="text" type="text" maxlength="100" value="© yourwebsite.com">
+      <div class="row" style="margin-top:8px">
+        <label for="color">Text colour</label>
+        <input id="color" type="color" value="#ffffff">
+      </div>
+
+      <label class="field">Or use a logo</label>
+      <div class="row">
+        <label class="btn" for="logo">Choose logo…</label>
+        <input class="sr-only" id="logo" type="file" accept="image/*">
+        <button class="btn" id="removeLogo" type="button" hidden>Remove</button>
+      </div>
+      <p class="hint" id="logoName">No logo chosen</p>
+      <p class="hint">A logo replaces the text. PNGs with a transparent background work best.</p>
+
+      <label class="field" for="position">Position</label>
+      <select id="position">
+        <option value="bottom-right">Bottom right</option>
+        <option value="bottom-left">Bottom left</option>
+        <option value="top-right">Top right</option>
+        <option value="top-left">Top left</option>
+        <option value="center">Center</option>
+        <option value="tile">Repeat across photo</option>
+      </select>
+
+      <div class="range-head"><label for="size">Size</label><output id="sizeOut" for="size">30%</output></div>
+      <input id="size" type="range" min="5" max="80" value="30">
+      <div class="range-head"><label for="opacity">Opacity</label><output id="opacityOut" for="opacity">60%</output></div>
+      <input id="opacity" type="range" min="5" max="100" value="60">
+      <div class="range-head"><label for="angle">Rotation</label><output id="angleOut" for="angle">0°</output></div>
+      <input id="angle" type="range" min="-90" max="90" value="0">
+
+      <label class="field" for="format">Save as</label>
+      <select id="format">
+        <option value="image/png">PNG (best quality)</option>
+        <option value="image/jpeg">JPG (smaller file)</option>
+      </select>
+
+      <button class="btn primary" id="download" type="button" disabled>Download image</button>
+    </form>
+  </div>
+</main>
+<script src="{{ url_for('static', filename='render.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
